@@ -46,3 +46,4 @@ htmlcov/
 .dmypy.json
 dmypy.json
 NOTE.txt
+.env
