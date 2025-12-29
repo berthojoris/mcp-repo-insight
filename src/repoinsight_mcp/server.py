@@ -33,26 +33,38 @@ class MCPServer:
 
         self._tools = {
             "get_repo_summary": {
-                "description": "Get a comprehensive summary of the GitHub repository including metadata, statistics, recent activity, top contributors, and main documentation",
+                "description": (
+                    "Get a comprehensive summary of the GitHub repository "
+                    "including metadata, statistics, recent activity, top "
+                    "contributors, and main documentation"
+                ),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "repository": {
                             "type": "string",
-                            "description": "Repository URL or owner/name format",
+                            "description": (
+                                "Repository URL or owner/name format"
+                            ),
                         },
                     },
                     "required": ["repository"],
                 },
             },
             "search_doc": {
-                "description": "Search for knowledge documentation corresponding to the GitHub repository, quickly understanding repository knowledge, news, recent issues, PRs, and contributors",
+                "description": (
+                    "Search for knowledge documentation corresponding to the "
+                    "GitHub repository, quickly understanding repository "
+                    "knowledge, news, recent issues, PRs, and contributors"
+                ),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "repository": {
                             "type": "string",
-                            "description": "Repository URL or owner/name format",
+                            "description": (
+                                "Repository URL or owner/name format"
+                            ),
                         },
                         "query": {
                             "type": "string",
@@ -68,13 +80,19 @@ class MCPServer:
                 },
             },
             "get_repo_structure": {
-                "description": "Get the directory structure and file list of the GitHub repository to understand project module splitting and directory organization",
+                "description": (
+                    "Get the directory structure and file list of the GitHub "
+                    "repository to understand project module splitting and "
+                    "directory organization"
+                ),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "repository": {
                             "type": "string",
-                            "description": "Repository URL or owner/name format",
+                            "description": (
+                                "Repository URL or owner/name format"
+                            ),
                         },
                         "path": {
                             "type": "string",
@@ -91,17 +109,25 @@ class MCPServer:
                 },
             },
             "read_file": {
-                "description": "Read the complete code content of specified files in the GitHub repository to deeply analyze the implementation details of the file code",
+                "description": (
+                    "Read the complete code content of specified files in the "
+                    "GitHub repository to deeply analyze the implementation "
+                    "details of the file code"
+                ),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "repository": {
                             "type": "string",
-                            "description": "Repository URL or owner/name format",
+                            "description": (
+                                "Repository URL or owner/name format"
+                            ),
                         },
                         "path": {
                             "type": "string",
-                            "description": "File path relative to repository root",
+                            "description": (
+                                "File path relative to repository root"
+                            ),
                         },
                     },
                     "required": ["repository", "path"],
@@ -131,24 +157,43 @@ class MCPServer:
             return None
 
         try:
-            if method == "tools/list":
-                return self._handle_tools_list(request_id)
-            elif method == "tools/call":
-                return self._handle_tools_call(params, request_id)
-            elif method == "initialize":
-                return self._handle_initialize(request_id)
-            else:
-                return self._error_response(
-                    request_id, "MethodNotFound", f"Unknown method: {method}"
-                )
+            return self._dispatch_request(method, params, request_id)
         except RepoInsightError as e:
             return self._error_response(
                 request_id, e.__class__.__name__, str(e)
             )
-        except Exception as e:
+        except (ValueError, TypeError, KeyError) as e:
+            return self._error_response(
+                request_id, "InvalidRequest", f"Invalid request: {e}"
+            )
+        except Exception as e:  # pylint: disable=broad-exception-caught
             return self._error_response(
                 request_id, "InternalError", f"Internal error: {e}"
             )
+
+    def _dispatch_request(
+        self, method: str | None, params: dict[str, Any], request_id: Any
+    ) -> dict[str, Any]:
+        """Dispatch request to appropriate handler.
+
+        Args:
+            method: Method name.
+            params: Request parameters.
+            request_id: Request ID.
+
+        Returns:
+            Response dictionary.
+        """
+        if method == "tools/list":
+            return self._handle_tools_list(request_id)
+        if method == "tools/call":
+            return self._handle_tools_call(params, request_id)
+        if method == "initialize":
+            return self._handle_initialize(request_id)
+
+        return self._error_response(
+            request_id, "MethodNotFound", f"Unknown method: {method}"
+        )
 
     def _handle_initialize(self, request_id: Any) -> dict[str, Any]:
         """Handle initialize request.
@@ -197,7 +242,9 @@ class MCPServer:
             "result": {"tools": tools},
         }
 
-    def _handle_tools_call(self, params: dict[str, Any], request_id: Any) -> dict[str, Any]:
+    def _handle_tools_call(
+        self, params: dict[str, Any], request_id: Any
+    ) -> dict[str, Any]:
         """Handle tools/call request.
 
         Args:
@@ -272,7 +319,14 @@ class MCPServer:
                     None, "ParseError", "Invalid JSON"
                 )
                 print(json.dumps(error), flush=True)
-            except Exception as e:
+            except (IOError, OSError) as e:
+                # Log critical IO errors but try to continue or exit gracefully
+                error = self._error_response(
+                    None, "InternalError", f"IO Error: {e}"
+                )
+                print(json.dumps(error), flush=True)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                # Catch-all for unexpected runtime errors to prevent crash
                 error = self._error_response(
                     None, "InternalError", f"Unexpected error: {e}"
                 )

@@ -42,7 +42,9 @@ class ToolHandlers:
         self._search_index = search_index
         self._indexer = DocumentIndexer(search_index)
 
-    def handle_get_repo_summary(self, params: dict[str, Any]) -> GetRepoSummaryOutput:
+    def handle_get_repo_summary(
+        self, params: dict[str, Any]
+    ) -> GetRepoSummaryOutput:
         """Handle get_repo_summary tool request.
 
         Args:
@@ -57,25 +59,16 @@ class ToolHandlers:
         cache_path, metadata = self._repo_cache.get_repository(owner, name)
 
         # Get README summary
-        readme_summary = None
-        readme_patterns = ["README.md", "README.rst", "README.txt", "README"]
-        for pattern in readme_patterns:
-            readme_path = cache_path / pattern
-            if readme_path.exists() and readme_path.is_file():
-                try:
-                    content = readme_path.read_text(encoding="utf-8")
-                    # Get first 500 characters as summary
-                    readme_summary = content[:500].strip()
-                    if len(content) > 500:
-                        readme_summary += "..."
-                    break
-                except Exception:
-                    pass
+        readme_summary = self._get_readme_summary(cache_path)
 
         # Get recent issues and PRs
         issues = self._github_client.get_recent_issues(owner, name, limit=5)
-        pull_requests = self._github_client.get_recent_pull_requests(owner, name, limit=5)
-        contributors = self._github_client.get_contributors(owner, name, limit=10)
+        pull_requests = self._github_client.get_recent_pull_requests(
+            owner, name, limit=5
+        )
+        contributors = self._github_client.get_contributors(
+            owner, name, limit=10
+        )
 
         # Get language stats
         file_reader = FileReader(cache_path)
@@ -99,6 +92,30 @@ class ToolHandlers:
             languages=language_stats,
             total_files=total_files,
         )
+
+    def _get_readme_summary(self, cache_path: Path) -> str | None:
+        """Get summary from README file.
+
+        Args:
+            cache_path: Repository cache path.
+
+        Returns:
+            README summary or None.
+        """
+        readme_patterns = ["README.md", "README.rst", "README.txt", "README"]
+        for pattern in readme_patterns:
+            readme_path = cache_path / pattern
+            if readme_path.exists() and readme_path.is_file():
+                try:
+                    content = readme_path.read_text(encoding="utf-8")
+                    # Get first 500 characters as summary
+                    readme_summary = content[:500].strip()
+                    if len(content) > 500:
+                        readme_summary += "..."
+                    return readme_summary
+                except (OSError, UnicodeDecodeError):
+                    pass
+        return None
 
     def handle_search_doc(self, params: dict[str, Any]) -> SearchDocOutput:
         """Handle search_doc tool request.
@@ -125,8 +142,12 @@ class ToolHandlers:
         )
 
         issues = self._github_client.get_recent_issues(owner, name, limit=5)
-        pull_requests = self._github_client.get_recent_pull_requests(owner, name, limit=5)
-        contributors = self._github_client.get_contributors(owner, name, limit=10)
+        pull_requests = self._github_client.get_recent_pull_requests(
+            owner, name, limit=5
+        )
+        contributors = self._github_client.get_contributors(
+            owner, name, limit=10
+        )
 
         return SearchDocOutput(
             repository={
@@ -160,7 +181,7 @@ class ToolHandlers:
         )
 
         owner, name = GitHubClient.parse_repo_url(input_data.repository)
-        cache_path, metadata = self._repo_cache.get_repository(owner, name)
+        cache_path, _ = self._repo_cache.get_repository(owner, name)
 
         file_reader = FileReader(cache_path)
         tree = file_reader.get_file_tree(input_data.path, input_data.depth)
@@ -194,7 +215,7 @@ class ToolHandlers:
         )
 
         owner, name = GitHubClient.parse_repo_url(input_data.repository)
-        cache_path, metadata = self._repo_cache.get_repository(owner, name)
+        cache_path, _ = self._repo_cache.get_repository(owner, name)
 
         file_reader = FileReader(cache_path)
         content, file_metadata = file_reader.read_file(input_data.path)
@@ -226,6 +247,8 @@ class ToolHandlers:
             result["size"] = node.size
 
         if node.children is not None:
-            result["children"] = [self._tree_node_to_dict(child) for child in node.children]
+            result["children"] = [
+                self._tree_node_to_dict(child) for child in node.children
+            ]
 
         return result
