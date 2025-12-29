@@ -1,0 +1,258 @@
+"""MCP server implementation for RepoInsight."""
+
+import json
+import sys
+from dataclasses import asdict
+from typing import Any, Optional
+
+from .cache import RepositoryCache
+from .config import ensure_cache_directories
+from .exceptions import RepoInsightError
+from .github_client import GitHubClient
+from .handlers import ToolHandlers
+from .search import SearchIndex
+
+
+class MCPServer:
+    """MCP protocol server for RepoInsight."""
+
+    def __init__(self, github_token: Optional[str] = None) -> None:
+        """Initialize MCP server.
+
+        Args:
+            github_token: Optional GitHub personal access token.
+        """
+        ensure_cache_directories()
+
+        self._github_client = GitHubClient(github_token)
+        self._repo_cache = RepositoryCache(self._github_client)
+        self._search_index = SearchIndex()
+        self._handlers = ToolHandlers(
+            self._github_client, self._repo_cache, self._search_index
+        )
+
+        self._tools = {
+            "search_doc": {
+                "description": "Search for knowledge documentation corresponding to the GitHub repository, quickly understanding repository knowledge, news, recent issues, PRs, and contributors",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "repository": {
+                            "type": "string",
+                            "description": "Repository URL or owner/name format",
+                        },
+                        "query": {
+                            "type": "string",
+                            "description": "Search query",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of results",
+                            "default": 10,
+                        },
+                    },
+                    "required": ["repository", "query"],
+                },
+            },
+            "get_repo_structure": {
+                "description": "Get the directory structure and file list of the GitHub repository to understand project module splitting and directory organization",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "repository": {
+                            "type": "string",
+                            "description": "Repository URL or owner/name format",
+                        },
+                        "path": {
+                            "type": "string",
+                            "description": "Starting path (default: root)",
+                            "default": "",
+                        },
+                        "depth": {
+                            "type": "integer",
+                            "description": "Maximum tree depth",
+                            "default": 4,
+                        },
+                    },
+                    "required": ["repository"],
+                },
+            },
+            "read_file": {
+                "description": "Read the complete code content of specified files in the GitHub repository to deeply analyze the implementation details of the file code",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "repository": {
+                            "type": "string",
+                            "description": "Repository URL or owner/name format",
+                        },
+                        "path": {
+                            "type": "string",
+                            "description": "File path relative to repository root",
+                        },
+                    },
+                    "required": ["repository", "path"],
+                },
+            },
+        }
+
+    def handle_request(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Handle MCP request.
+
+        Args:
+            request: MCP request message.
+
+        Returns:
+            MCP response message.
+        """
+        method = request.get("method")
+        params = request.get("params", {})
+        request_id = request.get("id")
+
+        try:
+            if method == "tools/list":
+                return self._handle_tools_list(request_id)
+            elif method == "tools/call":
+                return self._handle_tools_call(params, request_id)
+            elif method == "initialize":
+                return self._handle_initialize(request_id)
+            else:
+                return self._error_response(
+                    request_id, "MethodNotFound", f"Unknown method: {method}"
+                )
+        except RepoInsightError as e:
+            return self._error_response(
+                request_id, e.__class__.__name__, str(e)
+            )
+        except Exception as e:
+            return self._error_response(
+                request_id, "InternalError", f"Internal error: {e}"
+            )
+
+    def _handle_initialize(self, request_id: Any) -> dict[str, Any]:
+        """Handle initialize request.
+
+        Args:
+            request_id: Request ID.
+
+        Returns:
+            Initialize response.
+        """
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "protocolVersion": "1.0",
+                "serverInfo": {
+                    "name": "repoinsight-mcp",
+                    "version": "1.0.0",
+                },
+                "capabilities": {
+                    "tools": {},
+                },
+            },
+        }
+
+    def _handle_tools_list(self, request_id: Any) -> dict[str, Any]:
+        """Handle tools/list request.
+
+        Args:
+            request_id: Request ID.
+
+        Returns:
+            Tools list response.
+        """
+        tools = []
+        for name, spec in self._tools.items():
+            tools.append({
+                "name": name,
+                "description": spec["description"],
+                "inputSchema": spec["inputSchema"],
+            })
+
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {"tools": tools},
+        }
+
+    def _handle_tools_call(self, params: dict[str, Any], request_id: Any) -> dict[str, Any]:
+        """Handle tools/call request.
+
+        Args:
+            params: Tool call parameters.
+            request_id: Request ID.
+
+        Returns:
+            Tool call response.
+        """
+        tool_name = params.get("name")
+        tool_params = params.get("arguments", {})
+
+        if tool_name == "search_doc":
+            result = self._handlers.handle_search_doc(tool_params)
+        elif tool_name == "get_repo_structure":
+            result = self._handlers.handle_get_repo_structure(tool_params)
+        elif tool_name == "read_file":
+            result = self._handlers.handle_read_file(tool_params)
+        else:
+            return self._error_response(
+                request_id, "ToolNotFound", f"Unknown tool: {tool_name}"
+            )
+
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": json.dumps(asdict(result), indent=2),
+                    }
+                ]
+            },
+        }
+
+    def _error_response(
+        self, request_id: Any, error_code: str, message: str
+    ) -> dict[str, Any]:
+        """Create error response.
+
+        Args:
+            request_id: Request ID.
+            error_code: Error code.
+            message: Error message.
+
+        Returns:
+            Error response.
+        """
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {
+                "code": error_code,
+                "message": message,
+            },
+        }
+
+    def run_stdio(self) -> None:
+        """Run server using stdio transport."""
+        for line in sys.stdin:
+            try:
+                request = json.loads(line)
+                response = self.handle_request(request)
+                print(json.dumps(response), flush=True)
+            except json.JSONDecodeError:
+                error = self._error_response(
+                    None, "ParseError", "Invalid JSON"
+                )
+                print(json.dumps(error), flush=True)
+            except Exception as e:
+                error = self._error_response(
+                    None, "InternalError", f"Unexpected error: {e}"
+                )
+                print(json.dumps(error), flush=True)
+
+    def cleanup(self) -> None:
+        """Clean up resources."""
+        self._search_index.close()

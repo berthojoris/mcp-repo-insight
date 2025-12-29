@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "repoinsight": {
+      "command": "python",
+      "args": [
+        "-m",
+        "repoinsight_mcp.main"
+      ],
+      "env": {
+        "GITHUB_TOKEN": ""
+      }
+    }
+  }
+}
