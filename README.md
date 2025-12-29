@@ -10,23 +10,36 @@ RepoInsight MCP is a Python-based Model Context Protocol (MCP) server that enabl
 
 ### Step 1: Install Dependencies
 ```bash
-# Windows
+# Navigate to project folder
 cd C:\DEKSTOP\MCP\repo_insight
+
+# Install required packages
 pip install -r requirements.txt
 ```
 
-### Step 2: Configure Your MCP Client
+### Step 2: Configure Claude Desktop
 
-**For Claude Desktop** - Edit config file:
+**Find your Python path first:**
+```bash
+# Windows
+where python
+
+# macOS/Linux  
+which python3
+```
+
+**Edit config file:**
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 
-Add this configuration:
+**Paste this configuration** (update paths to match your system):
+
+**Windows Example:**
 ```json
 {
   "mcpServers": {
     "repoinsight": {
-      "command": "python",
+      "command": "C:\\laragon\\bin\\python\\python-3.13\\python.exe",
       "args": ["-m", "repoinsight_mcp.main"],
       "cwd": "C:\\DEKSTOP\\MCP\\repo_insight",
       "env": {
@@ -37,15 +50,51 @@ Add this configuration:
 }
 ```
 
-**Note**: Update `cwd` and `PYTHONPATH` to match your installation path!
+**macOS/Linux Example:**
+```json
+{
+  "mcpServers": {
+    "repoinsight": {
+      "command": "/usr/local/bin/python3",
+      "args": ["-m", "repoinsight_mcp.main"],
+      "cwd": "/path/to/repo_insight",
+      "env": {
+        "PYTHONPATH": "/path/to/repo_insight/src"
+      }
+    }
+  }
+}
+```
+
+**Important Notes:**
+- Use **full Python path** (from `where python` or `which python3`)
+- `cwd` must point to the project root (where `src/` folder exists)
+- `PYTHONPATH` must point to the `src` folder inside your project
+- On Windows, use double backslashes `\\` in paths
 
 ### Step 3: Restart Claude Desktop
 
-1. Quit Claude Desktop completely
-2. Restart Claude Desktop
-3. Test with: **"Show me the structure of the fastapi/fastapi repository"**
+1. **Quit Claude Desktop completely** (File → Quit, not just close window)
+2. **Wait 5 seconds**
+3. **Start Claude Desktop again**
+4. **Test**: "Show me the structure of the fastapi/fastapi repository"
 
 ✅ **Done!** Your AI agent can now analyze any GitHub repository!
+
+---
+
+## ✅ Verify It's Working
+
+In Claude Desktop, you should see:
+- A small icon or indicator showing MCP servers are loaded
+- When you ask to analyze a repo, Claude will use the tools automatically
+
+**Test command:**
+```
+"Analyze the structure of django/django and show me the main components"
+```
+
+If it works, you'll see Claude using `get_repo_structure` tool and showing results!
 
 ---
 
@@ -72,16 +121,29 @@ Once configured, ask your AI agent things like:
 ## 🔑 GitHub Token (Optional)
 
 **Without token**: 60 requests/hour (good for testing)  
-**With token**: 5,000 requests/hour (better for heavy use)
+**With token**: 5,000 requests/hour (83x more - better for heavy use)
 
-To add a token:
-1. Get token: https://github.com/settings/tokens (no scopes needed)
-2. Add to config:
+### How to Create a Token:
+
+1. Go to: https://github.com/settings/tokens
+2. Click **"Generate new token (classic)"**
+3. Give it a name: `RepoInsight MCP`
+4. **Select NO scopes** (leave all checkboxes unchecked)
+   - ✅ We only need public repository access
+   - ✅ No permissions needed for public repos
+   - ✅ More secure with minimal permissions
+5. Click **"Generate token"**
+6. Copy the token (starts with `ghp_...`)
+
+### Add Token to Config:
+
+Update your Claude Desktop config to include the token:
+
 ```json
 {
   "mcpServers": {
     "repoinsight": {
-      "command": "python",
+      "command": "C:\\laragon\\bin\\python\\python-3.13\\python.exe",
       "args": ["-m", "repoinsight_mcp.main"],
       "cwd": "C:\\DEKSTOP\\MCP\\repo_insight",
       "env": {
@@ -92,7 +154,8 @@ To add a token:
   }
 }
 ```
-3. Restart Claude Desktop
+
+**Remember to restart Claude Desktop after adding the token!**
 
 ---
 
@@ -167,40 +230,53 @@ repoinsight-mcp
 
 ### MCP Client Configuration
 
-#### Claude Desktop
+#### Claude Desktop (Recommended)
 
-Add to your Claude Desktop config file:
-
+**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`  
 **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+**Complete working configuration:**
 
 ```json
 {
   "mcpServers": {
     "repoinsight": {
-      "command": "python",
+      "command": "C:\\path\\to\\python.exe",
       "args": ["-m", "repoinsight_mcp.main"],
+      "cwd": "C:\\path\\to\\repo_insight",
       "env": {
-        "GITHUB_TOKEN": "your_token_here"
+        "PYTHONPATH": "C:\\path\\to\\repo_insight\\src"
       }
     }
   }
 }
 ```
 
-Or if installed globally:
+**With GitHub Token (5000 req/hour):**
 
 ```json
 {
   "mcpServers": {
     "repoinsight": {
-      "command": "repoinsight-mcp",
+      "command": "C:\\path\\to\\python.exe",
+      "args": ["-m", "repoinsight_mcp.main"],
+      "cwd": "C:\\path\\to\\repo_insight",
       "env": {
-        "GITHUB_TOKEN": "your_token_here"
+        "PYTHONPATH": "C:\\path\\to\\repo_insight\\src",
+        "GITHUB_TOKEN": "ghp_your_token_here"
       }
     }
   }
 }
+```
+
+**Finding your paths:**
+```bash
+# Python path
+where python          # Windows
+which python3         # macOS/Linux
+
+# Project path - use absolute path where you cloned the project
 ```
 
 #### Cline (VS Code Extension)
@@ -422,25 +498,101 @@ mypy src/
 
 ## Troubleshooting
 
-### Rate Limiting
+### Common Issues
+
+#### 1. MCP Error -32000: Connection Closed
+
+**Cause**: Server failed to start
+
+**Solutions:**
+
+**A. Use Full Python Path**
+```json
+{
+  "mcpServers": {
+    "repoinsight": {
+      "command": "C:\\Users\\YourName\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+      "args": ["-m", "repoinsight_mcp.main"],
+      "cwd": "C:\\DEKSTOP\\MCP\\repo_insight",
+      "env": {
+        "PYTHONPATH": "C:\\DEKSTOP\\MCP\\repo_insight\\src"
+      }
+    }
+  }
+}
+```
+
+Find your Python path:
+```bash
+where python          # Windows
+which python3         # macOS/Linux
+```
+
+**B. Verify Dependencies**
+```bash
+cd C:\DEKSTOP\MCP\repo_insight
+pip install -r requirements.txt
+```
+
+**C. Test Server Manually**
+```bash
+cd C:\DEKSTOP\MCP\repo_insight
+set PYTHONPATH=C:\DEKSTOP\MCP\repo_insight\src
+python -m repoinsight_mcp.main
+```
+
+If this works, your paths are correct.
+
+---
+
+#### 2. Protocol Version Error
+
+If you see "Server's protocol version is not supported", the code has already been updated to use protocol version `2024-11-05`. Just restart Claude Desktop.
+
+---
+
+#### 3. Tools Don't Appear
+
+**Check:**
+- Config file is in the correct location
+- JSON syntax is valid (no missing commas/braces)
+- Paths use double backslashes `\\` on Windows
+- Claude Desktop was completely quit and restarted (not just window closed)
+
+**Verify config location:**
+```bash
+# Windows - should open the folder
+explorer %APPDATA%\Claude
+
+# macOS
+open ~/Library/Application\ Support/Claude/
+```
+
+--- Rate Limiting
 
 If you encounter GitHub API rate limits:
 1. Create a personal access token: https://github.com/settings/tokens
-2. Export it: `export GITHUB_TOKEN=your_token`
-3. Restart the server
+2. **Select NO scopes** (public repos don't need permissions)
+3. Add to config (see GitHub Token section above)
+4. Restart Claude Desktop
 
 ### Cache Issues
 
 Clear the cache:
 ```bash
+# Windows
+rmdir /s /q %USERPROFILE%\.repoinsight
+
+# macOS/Linux
 rm -rf ~/.repoinsight/repos/
 ```
 
 ### Import Errors
 
-Ensure you're in the virtual environment:
+Ensure dependencies are installed:
 ```bash
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+cd C:\DEKSTOP\MCP\repo_insight
+pip install -r requirements.txt
 ```
 
 ## Future Enhancements

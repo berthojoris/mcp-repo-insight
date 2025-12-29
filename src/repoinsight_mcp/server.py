@@ -96,18 +96,26 @@ class MCPServer:
             },
         }
 
-    def handle_request(self, request: dict[str, Any]) -> dict[str, Any]:
+    def handle_request(self, request: dict[str, Any]) -> dict[str, Any] | None:
         """Handle MCP request.
 
         Args:
             request: MCP request message.
 
         Returns:
-            MCP response message.
+            MCP response message, or None for notifications.
         """
         method = request.get("method")
         params = request.get("params", {})
         request_id = request.get("id")
+
+        # Handle notifications (no id = no response needed)
+        if request_id is None:
+            if method == "notifications/initialized":
+                # Client confirmed initialization, no response needed
+                return None
+            # Other notifications can be ignored
+            return None
 
         try:
             if method == "tools/list":
@@ -142,7 +150,7 @@ class MCPServer:
             "jsonrpc": "2.0",
             "id": request_id,
             "result": {
-                "protocolVersion": "1.0",
+                "protocolVersion": "2024-11-05",
                 "serverInfo": {
                     "name": "repoinsight-mcp",
                     "version": "1.0.0",
@@ -241,7 +249,9 @@ class MCPServer:
             try:
                 request = json.loads(line)
                 response = self.handle_request(request)
-                print(json.dumps(response), flush=True)
+                # Only send response if not a notification
+                if response is not None:
+                    print(json.dumps(response), flush=True)
             except json.JSONDecodeError:
                 error = self._error_response(
                     None, "ParseError", "Invalid JSON"

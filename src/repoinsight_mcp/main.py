@@ -41,12 +41,12 @@ def main() -> None:
     github_token: Optional[str] = args.token or os.environ.get("GITHUB_TOKEN")
 
     if args.mode == "stdio":
-        console.print("[bold green]RepoInsight MCP Server starting (stdio mode)[/bold green]", file=sys.stderr)
+        # Don't print to stderr in stdio mode (interferes with MCP protocol)
         server = MCPServer(github_token)
         try:
             server.run_stdio()
         except KeyboardInterrupt:
-            console.print("\n[yellow]Server stopped[/yellow]", file=sys.stderr)
+            pass
         finally:
             server.cleanup()
     elif args.mode == "http":
