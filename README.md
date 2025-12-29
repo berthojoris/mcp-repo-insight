@@ -297,9 +297,51 @@ Add to Cline MCP settings:
 
 ## MCP Tools
 
-RepoInsight provides **3 powerful tools** that enable AI agents to analyze, check, debug, and perform any task on GitHub repositories:
+RepoInsight provides **4 powerful tools** that enable AI agents to analyze, check, debug, and perform any task on GitHub repositories:
 
-### 1. search_doc
+### 1. get_repo_summary
+
+**Get a comprehensive summary of the GitHub repository including metadata, statistics, recent activity, top contributors, and main documentation.**
+
+🎯 **Use Cases for AI Agents:**
+- Quick overview of a repository before deep analysis
+- Understand repository popularity and activity level
+- Get README summary without reading the full file
+- See recent issues and PRs at a glance
+- Identify main programming languages used
+
+**Input:**
+```json
+{
+  "repository": "owner/repo"
+}
+```
+
+**Output:**
+```json
+{
+  "repository": {
+    "name": "owner/repo",
+    "description": "...",
+    "stars": 1234,
+    "forks": 567,
+    "language": "Python",
+    "default_branch": "main",
+    "updated_at": "2024-01-15T10:30:00Z"
+  },
+  "readme_summary": "First 500 characters of README...",
+  "recent_issues": [...],
+  "recent_pull_requests": [...],
+  "top_contributors": [...],
+  "languages": {
+    "Python": 45,
+    "JavaScript": 30
+  },
+  "total_files": 123
+}
+```
+
+### 2. search_doc
 
 **Search for knowledge documentation corresponding to the GitHub repository, quickly understanding repository knowledge, news, recent issues, PRs, and contributors.**
 
@@ -335,7 +377,7 @@ RepoInsight provides **3 powerful tools** that enable AI agents to analyze, chec
 }
 ```
 
-### 2. get_repo_structure
+### 3. get_repo_structure
 
 **Get the directory structure and file list of the GitHub repository to understand project module splitting and directory organization.**
 
@@ -371,7 +413,7 @@ RepoInsight provides **3 powerful tools** that enable AI agents to analyze, chec
 }
 ```
 
-### 3. read_file
+### 4. read_file
 
 **Read the complete code content of specified files in the GitHub repository to deeply analyze the implementation details of the file code.**
 
@@ -407,11 +449,12 @@ RepoInsight provides **3 powerful tools** that enable AI agents to analyze, chec
 
 ### 🤖 AI Agent Workflow Example
 
-1. **Discover** - Use `search_doc` to understand the repository
-2. **Navigate** - Use `get_repo_structure` to find relevant files
-3. **Analyze** - Use `read_file` to examine implementation details
-4. **Debug** - Read multiple files to trace bugs
-5. **Review** - Check code quality and patterns
+1. **Overview** - Use `get_repo_summary` to get a quick summary
+2. **Discover** - Use `search_doc` to understand the repository
+3. **Navigate** - Use `get_repo_structure` to find relevant files
+4. **Analyze** - Use `read_file` to examine implementation details
+5. **Debug** - Read multiple files to trace bugs
+6. **Review** - Check code quality and patterns
 
 ## Configuration
 

@@ -11,6 +11,8 @@ from .github_client import GitHubClient
 from .models import (
     GetRepoStructureInput,
     GetRepoStructureOutput,
+    GetRepoSummaryInput,
+    GetRepoSummaryOutput,
     ReadFileInput,
     ReadFileOutput,
     SearchDocInput,
@@ -39,6 +41,64 @@ class ToolHandlers:
         self._repo_cache = repo_cache
         self._search_index = search_index
         self._indexer = DocumentIndexer(search_index)
+
+    def handle_get_repo_summary(self, params: dict[str, Any]) -> GetRepoSummaryOutput:
+        """Handle get_repo_summary tool request.
+
+        Args:
+            params: Tool parameters.
+
+        Returns:
+            Repository summary.
+        """
+        input_data = GetRepoSummaryInput(repository=params["repository"])
+
+        owner, name = GitHubClient.parse_repo_url(input_data.repository)
+        cache_path, metadata = self._repo_cache.get_repository(owner, name)
+
+        # Get README summary
+        readme_summary = None
+        readme_patterns = ["README.md", "README.rst", "README.txt", "README"]
+        for pattern in readme_patterns:
+            readme_path = cache_path / pattern
+            if readme_path.exists() and readme_path.is_file():
+                try:
+                    content = readme_path.read_text(encoding="utf-8")
+                    # Get first 500 characters as summary
+                    readme_summary = content[:500].strip()
+                    if len(content) > 500:
+                        readme_summary += "..."
+                    break
+                except Exception:
+                    pass
+
+        # Get recent issues and PRs
+        issues = self._github_client.get_recent_issues(owner, name, limit=5)
+        pull_requests = self._github_client.get_recent_pull_requests(owner, name, limit=5)
+        contributors = self._github_client.get_contributors(owner, name, limit=10)
+
+        # Get language stats
+        file_reader = FileReader(cache_path)
+        language_stats = file_reader.get_language_stats()
+        total_files = sum(1 for _ in cache_path.rglob("*") if _.is_file())
+
+        return GetRepoSummaryOutput(
+            repository={
+                "name": metadata.full_name,
+                "description": metadata.description,
+                "stars": metadata.stars,
+                "forks": metadata.forks,
+                "language": metadata.language,
+                "default_branch": metadata.default_branch,
+                "updated_at": metadata.updated_at,
+            },
+            readme_summary=readme_summary,
+            recent_issues=[asdict(issue) for issue in issues],
+            recent_pull_requests=[asdict(pr) for pr in pull_requests],
+            top_contributors=[asdict(contrib) for contrib in contributors],
+            languages=language_stats,
+            total_files=total_files,
+        )
 
     def handle_search_doc(self, params: dict[str, Any]) -> SearchDocOutput:
         """Handle search_doc tool request.

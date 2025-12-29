@@ -75,6 +75,13 @@ class TreeNode:
 
 
 @dataclass
+class GetRepoSummaryInput:
+    """Input for get_repo_summary tool."""
+
+    repository: str
+
+
+@dataclass
 class SearchDocInput:
     """Input for search_doc tool."""
 
@@ -98,6 +105,19 @@ class ReadFileInput:
 
     repository: str
     path: str
+
+
+@dataclass
+class GetRepoSummaryOutput:
+    """Output for get_repo_summary tool."""
+
+    repository: dict[str, Any]
+    readme_summary: Optional[str]
+    recent_issues: list[dict[str, Any]]
+    recent_pull_requests: list[dict[str, Any]]
+    top_contributors: list[dict[str, Any]]
+    languages: dict[str, int]
+    total_files: int
 
 
 @dataclass

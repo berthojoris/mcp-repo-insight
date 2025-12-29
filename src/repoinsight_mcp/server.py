@@ -32,6 +32,19 @@ class MCPServer:
         )
 
         self._tools = {
+            "get_repo_summary": {
+                "description": "Get a comprehensive summary of the GitHub repository including metadata, statistics, recent activity, top contributors, and main documentation",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "repository": {
+                            "type": "string",
+                            "description": "Repository URL or owner/name format",
+                        },
+                    },
+                    "required": ["repository"],
+                },
+            },
             "search_doc": {
                 "description": "Search for knowledge documentation corresponding to the GitHub repository, quickly understanding repository knowledge, news, recent issues, PRs, and contributors",
                 "inputSchema": {
@@ -197,7 +210,9 @@ class MCPServer:
         tool_name = params.get("name")
         tool_params = params.get("arguments", {})
 
-        if tool_name == "search_doc":
+        if tool_name == "get_repo_summary":
+            result = self._handlers.handle_get_repo_summary(tool_params)
+        elif tool_name == "search_doc":
             result = self._handlers.handle_search_doc(tool_params)
         elif tool_name == "get_repo_structure":
             result = self._handlers.handle_get_repo_structure(tool_params)
