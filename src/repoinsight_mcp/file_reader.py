@@ -1,5 +1,6 @@
 """File reading utilities with security validation."""
 
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -187,12 +188,30 @@ class FileReader:
         Returns:
             Dictionary mapping language names to file counts.
         """
-        stats: dict[str, int] = {}
+        stats, _ = self.get_repo_stats()
+        return stats
 
-        for file_path in self._repo_path.rglob("*"):
-            if file_path.is_file() and not file_path.name.startswith("."):
+    def get_repo_stats(self) -> tuple[dict[str, int], int]:
+        """Get repository statistics (languages and file count).
+
+        Returns:
+            Tuple of (language_stats, total_files).
+        """
+        stats: dict[str, int] = {}
+        total_files = 0
+
+        for root, dirs, files in os.walk(self._repo_path):
+            # Modify dirs in-place to skip hidden directories
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+
+            for file in files:
+                if file.startswith("."):
+                    continue
+
+                file_path = Path(root) / file
+                total_files += 1
                 language = self._detect_language(file_path)
                 if language:
                     stats[language] = stats.get(language, 0) + 1
 
-        return stats
+        return stats, total_files

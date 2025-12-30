@@ -1,5 +1,6 @@
 """MCP tool handlers for RepoInsight."""
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -61,19 +62,27 @@ class ToolHandlers:
         # Get README summary
         readme_summary = self._get_readme_summary(cache_path)
 
-        # Get recent issues and PRs
-        issues = self._github_client.get_recent_issues(owner, name, limit=5)
-        pull_requests = self._github_client.get_recent_pull_requests(
-            owner, name, limit=5
-        )
-        contributors = self._github_client.get_contributors(
-            owner, name, limit=10
-        )
+        # Execute parallel tasks
+        with ThreadPoolExecutor() as executor:
+            # Stats calculation
+            file_reader = FileReader(cache_path)
+            stats_future = executor.submit(file_reader.get_repo_stats)
 
-        # Get language stats
-        file_reader = FileReader(cache_path)
-        language_stats = file_reader.get_language_stats()
-        total_files = sum(1 for _ in cache_path.rglob("*") if _.is_file())
+            # API calls
+            issues_future = executor.submit(
+                self._github_client.get_recent_issues, owner, name, limit=5
+            )
+            pr_future = executor.submit(
+                self._github_client.get_recent_pull_requests, owner, name, limit=5
+            )
+            contributors_future = executor.submit(
+                self._github_client.get_contributors, owner, name, limit=10
+            )
+
+            language_stats, total_files = stats_future.result()
+            issues = issues_future.result()
+            pull_requests = pr_future.result()
+            contributors = contributors_future.result()
 
         return GetRepoSummaryOutput(
             repository={
@@ -185,9 +194,7 @@ class ToolHandlers:
 
         file_reader = FileReader(cache_path)
         tree = file_reader.get_file_tree(input_data.path, input_data.depth)
-        language_stats = file_reader.get_language_stats()
-
-        total_files = sum(1 for _ in cache_path.rglob("*") if _.is_file())
+        language_stats, total_files = file_reader.get_repo_stats()
 
         structure_dicts = [self._tree_node_to_dict(node) for node in tree]
 
