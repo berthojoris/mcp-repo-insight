@@ -83,6 +83,31 @@ class GitHubClient:
         except GithubException as e:
             raise GitHubAPIError(f"Failed to fetch repository metadata: {e}")
 
+    def validate_repository(self, owner: str, name: str) -> dict[str, bool]:
+        """Validate repository has content and is ready for cloning.
+
+        Args:
+            owner: Repository owner.
+            name: Repository name.
+
+        Returns:
+            Dictionary with validation results.
+
+        Raises:
+            GitHubAPIError: If API request fails.
+        """
+        try:
+            repo = self._github.get_repo(f"{owner}/{name}")
+            return {
+                "exists": True,
+                "has_commits": repo.get_commits().totalCount > 0,
+                "has_default_branch": repo.default_branch is not None,
+                "size": repo.size,
+                "is_empty": repo.size == 0,
+            }
+        except GithubException as e:
+            raise GitHubAPIError(f"Failed to validate repository: {e}")
+
     def get_recent_issues(
         self, owner: str, name: str, limit: int = 10
     ) -> list[IssueResult]:

@@ -75,12 +75,19 @@ class RepositoryCache:
             self._update_cache_timestamp(cache_path)
             return cache_path, metadata
 
+        validation = self._github_client.validate_repository(owner, name)
+        if not validation["has_commits"] or validation["is_empty"]:
+            raise GitHubAPIError(
+                f"Repository {owner}/{name} appears to be empty or has no commits. "
+                f"Cannot clone an empty repository."
+            )
+
         return self._clone_repository(metadata, cache_path), metadata
 
     def _clone_repository(
         self, metadata: RepositoryMetadata, cache_path: Path
     ) -> Path:
-        """Clone repository to local cache with timeout.
+        """Clone repository to local cache with timeout and fallback.
 
         Args:
             metadata: Repository metadata.
@@ -96,39 +103,94 @@ class RepositoryCache:
             shutil.rmtree(cache_path)
 
         try:
-            result = subprocess.run(
-                [
-                    "git",
-                    "clone",
-                    "--depth=1",
-                    "--single-branch",
-                    "--branch", metadata.default_branch,
-                    "--filter=blob:none",
-                    metadata.clone_url,
-                    str(cache_path)
-                ],
-                timeout=CLONE_TIMEOUT,
-                capture_output=True,
-                text=True,
-                check=False
-            )
+            return self._clone_with_filter(metadata, cache_path)
+        except GitHubAPIError as e:
+            try:
+                if cache_path.exists():
+                    shutil.rmtree(cache_path)
+                return self._clone_without_filter(metadata, cache_path)
+            except GitHubAPIError as fallback_error:
+                raise GitHubAPIError(
+                    f"Failed to clone {metadata.full_name} with both methods. "
+                    f"Original error: {str(e)}. "
+                    f"Fallback error: {str(fallback_error)}. "
+                    f"The repository may be empty, have branch issues, or network problems."
+                )
 
-            if result.returncode != 0:
-                error_msg = result.stderr or result.stdout or "Unknown error"
-                raise GitHubAPIError(f"Git clone failed: {error_msg}")
+    def _clone_with_filter(
+        self, metadata: RepositoryMetadata, cache_path: Path
+    ) -> Path:
+        """Clone repository with blob filter for faster cloning.
 
-            return cache_path
-        except subprocess.TimeoutExpired:
-            if cache_path.exists():
-                shutil.rmtree(cache_path)
-            raise GitHubAPIError(
-                f"Repository clone timed out after {CLONE_TIMEOUT} seconds. "
-                f"The repository may be too large or network is slow."
-            )
-        except Exception as e:
-            if cache_path.exists():
-                shutil.rmtree(cache_path)
-            raise GitHubAPIError(f"Failed to clone repository: {e}")
+        Args:
+            metadata: Repository metadata.
+            cache_path: Target cache path.
+
+        Returns:
+            Path to cloned repository.
+
+        Raises:
+            GitHubAPIError: If clone fails.
+        """
+        result = subprocess.run(
+            [
+                "git",
+                "clone",
+                "--depth=1",
+                "--single-branch",
+                "--branch", metadata.default_branch,
+                "--filter=blob:none",
+                metadata.clone_url,
+                str(cache_path)
+            ],
+            timeout=CLONE_TIMEOUT,
+            capture_output=True,
+            text=True,
+            check=False
+        )
+
+        if result.returncode != 0:
+            error_msg = result.stderr or result.stdout or "Unknown error"
+            raise GitHubAPIError(f"Git clone with filter failed: {error_msg}")
+
+        return cache_path
+
+    def _clone_without_filter(
+        self, metadata: RepositoryMetadata, cache_path: Path
+    ) -> Path:
+        """Clone repository without blob filter as fallback.
+
+        Args:
+            metadata: Repository metadata.
+            cache_path: Target cache path.
+
+        Returns:
+            Path to cloned repository.
+
+        Raises:
+            GitHubAPIError: If clone fails.
+        """
+        result = subprocess.run(
+            [
+                "git",
+                "clone",
+                "--depth=1",
+                "--single-branch",
+                "--branch", metadata.default_branch,
+                metadata.clone_url,
+                str(cache_path)
+            ],
+            timeout=CLONE_TIMEOUT,
+            capture_output=True,
+            text=True,
+            check=False
+        )
+
+        if result.returncode != 0:
+            error_msg = result.stderr or result.stdout or "Unknown error"
+            raise GitHubAPIError(f"Git clone without filter failed: {error_msg}")
+
+        return cache_path
 
     def _update_cache_timestamp(self, cache_path: Path) -> None:
         """Update cache timestamp to current time.
