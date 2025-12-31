@@ -15,7 +15,7 @@ CACHE_TTL_SECONDS: Final[int] = 86400
 GITHUB_API_BASE: Final[str] = "https://api.github.com"
 DEFAULT_SEARCH_LIMIT: Final[int] = 10
 
-OPERATION_TIMEOUT: Final[int] = 25
+OPERATION_TIMEOUT: Final[int] = 60
 CLONE_TIMEOUT: Final[int] = 300
 TREE_BUILD_BATCH_SIZE: Final[int] = 100
 
