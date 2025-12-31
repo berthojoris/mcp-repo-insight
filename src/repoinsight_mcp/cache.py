@@ -77,12 +77,24 @@ class RepositoryCache:
 
         validation = self._github_client.validate_repository(owner, name)
         if not validation["has_commits"] or validation["is_empty"]:
-            raise GitHubAPIError(
-                f"Repository {owner}/{name} appears to be empty or has no commits. "
-                f"Cannot clone an empty repository."
-            )
+            return self._handle_empty_repository(cache_path), metadata
 
         return self._clone_repository(metadata, cache_path), metadata
+
+    def _handle_empty_repository(self, cache_path: Path) -> Path:
+        """Handle empty repository by creating empty cache directory.
+
+        Args:
+            cache_path: Target cache path.
+
+        Returns:
+            Path to empty cache directory.
+        """
+        if cache_path.exists():
+            shutil.rmtree(cache_path)
+
+        cache_path.mkdir(parents=True, exist_ok=True)
+        return cache_path
 
     def _clone_repository(
         self, metadata: RepositoryMetadata, cache_path: Path
