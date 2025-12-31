@@ -64,9 +64,11 @@ class ToolHandlers:
 
         # Execute parallel tasks
         with ThreadPoolExecutor() as executor:
-            # Stats calculation
+            # Stats calculation (using tree with stats for efficiency)
             file_reader = FileReader(cache_path)
-            stats_future = executor.submit(file_reader.get_repo_stats)
+            stats_future = executor.submit(
+                file_reader.get_file_tree_with_stats, "", 1
+            )
 
             # API calls
             issues_future = executor.submit(
@@ -79,7 +81,7 @@ class ToolHandlers:
                 self._github_client.get_contributors, owner, name, limit=10
             )
 
-            language_stats, total_files = stats_future.result()
+            _, language_stats, total_files = stats_future.result()
             issues = issues_future.result()
             pull_requests = pr_future.result()
             contributors = contributors_future.result()
@@ -193,8 +195,9 @@ class ToolHandlers:
         cache_path, _ = self._repo_cache.get_repository(owner, name)
 
         file_reader = FileReader(cache_path)
-        tree = file_reader.get_file_tree(input_data.path, input_data.depth)
-        language_stats, total_files = file_reader.get_repo_stats()
+        tree, language_stats, total_files = file_reader.get_file_tree_with_stats(
+            input_data.path, input_data.depth
+        )
 
         structure_dicts = [self._tree_node_to_dict(node) for node in tree]
 

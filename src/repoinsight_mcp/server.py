@@ -2,11 +2,13 @@
 
 import json
 import sys
+import signal
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import asdict
 from typing import Any, Optional
 
 from .cache import RepositoryCache
-from .config import ensure_cache_directories
+from .config import ensure_cache_directories, OPERATION_TIMEOUT
 from .exceptions import RepoInsightError
 from .github_client import GitHubClient
 from .handlers import ToolHandlers
@@ -49,6 +51,7 @@ class MCPServer:
                         },
                     },
                     "required": ["repository"],
+                    "additionalProperties": False,
                 },
             },
             "search_doc": {
@@ -77,6 +80,7 @@ class MCPServer:
                         },
                     },
                     "required": ["repository", "query"],
+                    "additionalProperties": False,
                 },
             },
             "get_repo_structure": {
@@ -106,6 +110,7 @@ class MCPServer:
                         },
                     },
                     "required": ["repository"],
+                    "additionalProperties": False,
                 },
             },
             "read_file": {
@@ -131,6 +136,7 @@ class MCPServer:
                         },
                     },
                     "required": ["repository", "path"],
+                    "additionalProperties": False,
                 },
             },
         }
@@ -245,7 +251,7 @@ class MCPServer:
     def _handle_tools_call(
         self, params: dict[str, Any], request_id: Any
     ) -> dict[str, Any]:
-        """Handle tools/call request.
+        """Handle tools/call request with timeout protection.
 
         Args:
             params: Tool call parameters.
@@ -257,17 +263,32 @@ class MCPServer:
         tool_name = params.get("name")
         tool_params = params.get("arguments", {})
 
-        if tool_name == "get_repo_summary":
-            result = self._handlers.handle_get_repo_summary(tool_params)
-        elif tool_name == "search_doc":
-            result = self._handlers.handle_search_doc(tool_params)
-        elif tool_name == "get_repo_structure":
-            result = self._handlers.handle_get_repo_structure(tool_params)
-        elif tool_name == "read_file":
-            result = self._handlers.handle_read_file(tool_params)
-        else:
+        def execute_tool() -> Any:
+            if tool_name == "get_repo_summary":
+                return self._handlers.handle_get_repo_summary(tool_params)
+            elif tool_name == "search_doc":
+                return self._handlers.handle_search_doc(tool_params)
+            elif tool_name == "get_repo_structure":
+                return self._handlers.handle_get_repo_structure(tool_params)
+            elif tool_name == "read_file":
+                return self._handlers.handle_read_file(tool_params)
+            else:
+                raise ValueError(f"Unknown tool: {tool_name}")
+
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(execute_tool)
+                result = future.result(timeout=OPERATION_TIMEOUT)
+        except FutureTimeoutError:
             return self._error_response(
-                request_id, "ToolNotFound", f"Unknown tool: {tool_name}"
+                request_id,
+                "Timeout",
+                f"Tool execution timed out after {OPERATION_TIMEOUT} seconds. "
+                f"The repository may be very large or the operation requires more time."
+            )
+        except ValueError as e:
+            return self._error_response(
+                request_id, "ToolNotFound", str(e)
             )
 
         return {
@@ -306,7 +327,14 @@ class MCPServer:
         }
 
     def run_stdio(self) -> None:
-        """Run server using stdio transport."""
+        """Run server using stdio transport with signal handling."""
+        def handle_signal(signum, frame):
+            self.cleanup()
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, handle_signal)
+        signal.signal(signal.SIGTERM, handle_signal)
+
         for line in sys.stdin:
             try:
                 request = json.loads(line)

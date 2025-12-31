@@ -1,13 +1,12 @@
 """Repository caching and local storage management."""
 
 import shutil
+import subprocess
 import time
 from pathlib import Path
 from typing import Optional
 
-from git import Repo
-
-from .config import CACHE_TTL_SECONDS, REPOS_DIR
+from .config import CACHE_TTL_SECONDS, CLONE_TIMEOUT, REPOS_DIR
 from .exceptions import GitHubAPIError, InvalidRepositoryError
 from .github_client import GitHubClient
 from .models import RepositoryMetadata
@@ -81,7 +80,7 @@ class RepositoryCache:
     def _clone_repository(
         self, metadata: RepositoryMetadata, cache_path: Path
     ) -> Path:
-        """Clone repository to local cache.
+        """Clone repository to local cache with timeout.
 
         Args:
             metadata: Repository metadata.
@@ -91,19 +90,41 @@ class RepositoryCache:
             Path to cloned repository.
 
         Raises:
-            GitHubAPIError: If clone fails.
+            GitHubAPIError: If clone fails or times out.
         """
         if cache_path.exists():
             shutil.rmtree(cache_path)
 
         try:
-            Repo.clone_from(
-                metadata.clone_url,
-                cache_path,
-                depth=1,
-                branch=metadata.default_branch,
+            result = subprocess.run(
+                [
+                    "git",
+                    "clone",
+                    "--depth=1",
+                    "--single-branch",
+                    "--branch", metadata.default_branch,
+                    "--filter=blob:none",
+                    metadata.clone_url,
+                    str(cache_path)
+                ],
+                timeout=CLONE_TIMEOUT,
+                capture_output=True,
+                text=True,
+                check=False
             )
+
+            if result.returncode != 0:
+                error_msg = result.stderr or result.stdout or "Unknown error"
+                raise GitHubAPIError(f"Git clone failed: {error_msg}")
+
             return cache_path
+        except subprocess.TimeoutExpired:
+            if cache_path.exists():
+                shutil.rmtree(cache_path)
+            raise GitHubAPIError(
+                f"Repository clone timed out after {CLONE_TIMEOUT} seconds. "
+                f"The repository may be too large or network is slow."
+            )
         except Exception as e:
             if cache_path.exists():
                 shutil.rmtree(cache_path)

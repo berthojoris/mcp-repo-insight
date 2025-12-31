@@ -28,6 +28,7 @@ class FileReader:
             repo_path: Root path of repository.
         """
         self._repo_path = repo_path.resolve()
+        self._language_cache: dict[str, Optional[str]] = {}
 
     def validate_path(self, file_path: str) -> Path:
         """Validate and resolve file path.
@@ -111,10 +112,16 @@ class FileReader:
         Returns:
             Language name or None.
         """
+        ext = file_path.suffix.lower()
+        if ext in self._language_cache:
+            return self._language_cache[ext]
+
         try:
             lexer = get_lexer_for_filename(str(file_path))
+            self._language_cache[ext] = lexer.name
             return lexer.name
         except ClassNotFound:
+            self._language_cache[ext] = None
             return None
 
     def get_file_tree(
@@ -135,6 +142,95 @@ class FileReader:
             start_path = self._repo_path
 
         return self._build_tree(start_path, self._repo_path, 0, max_depth)
+
+    def get_file_tree_with_stats(
+        self, base_path: str = "", max_depth: int = 4
+    ) -> tuple[list[TreeNode], dict[str, int], int]:
+        """Get directory tree structure and statistics in single pass.
+
+        Args:
+            base_path: Starting path (relative to repo root).
+            max_depth: Maximum recursion depth.
+
+        Returns:
+            Tuple of (tree_nodes, language_stats, total_files).
+        """
+        if base_path:
+            start_path = self.validate_path(base_path)
+        else:
+            start_path = self._repo_path
+
+        stats: dict[str, int] = {}
+        file_count = [0]
+
+        tree = self._build_tree_with_stats(
+            start_path, self._repo_path, 0, max_depth, stats, file_count
+        )
+
+        return tree, stats, file_count[0]
+
+    def _build_tree_with_stats(
+        self,
+        current_path: Path,
+        repo_root: Path,
+        depth: int,
+        max_depth: int,
+        stats: dict[str, int],
+        file_count: list[int],
+    ) -> list[TreeNode]:
+        """Recursively build directory tree and collect stats in single pass.
+
+        Args:
+            current_path: Current directory path.
+            repo_root: Repository root path.
+            depth: Current depth.
+            max_depth: Maximum depth.
+            stats: Language statistics dictionary (modified in place).
+            file_count: Total file count in mutable list (modified in place).
+
+        Returns:
+            List of tree nodes.
+        """
+        if depth >= max_depth:
+            return []
+
+        nodes = []
+        try:
+            items = sorted(
+                current_path.iterdir(),
+                key=lambda x: (not x.is_dir(), x.name)
+            )
+        except PermissionError:
+            return []
+
+        for item in items:
+            if item.name.startswith("."):
+                continue
+
+            relative_path = str(item.relative_to(repo_root))
+            node = TreeNode(
+                name=item.name,
+                path=relative_path,
+                type="directory" if item.is_dir() else "file",
+            )
+
+            if item.is_file():
+                try:
+                    node.size = item.stat().st_size
+                    file_count[0] += 1
+                    language = self._detect_language(item)
+                    if language:
+                        stats[language] = stats.get(language, 0) + 1
+                except OSError:
+                    node.size = 0
+            elif item.is_dir():
+                node.children = self._build_tree_with_stats(
+                    item, repo_root, depth + 1, max_depth, stats, file_count
+                )
+
+            nodes.append(node)
+
+        return nodes
 
     def _build_tree(
         self, current_path: Path, repo_root: Path, depth: int, max_depth: int
